@@ -35,7 +35,7 @@ Copy
 git clone https://github.com/your-org/hello-gpu.git
 cd hello-gpu
 
-# (optional) compile for specific arch e.g. Ada Lovelace
+# compile for specific arch e.g. Ada Lovelace
 $Env:CUDA_ARCH = "sm_89"
 
 cargo run --release
