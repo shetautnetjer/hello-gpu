@@ -1,6 +1,6 @@
 use cust::error::CudaResult;
 use cust::prelude::*;
-use nvml::NVML;
+use nvml_wrapper::Nvml;
 use serde::Serialize;
 use std::ffi::CString;
 
@@ -25,7 +25,7 @@ fn main() -> CudaResult<()> {
     ctx.set_current()?;
 
     // ── gather static properties via cust & NVML ─────────────────────────
-    let nvml   = NVML::init().unwrap();
+    let nvml   = Nvml::init().unwrap();
     let handle = nvml.device_by_index(0).unwrap();
 
     let (drv_major, drv_minor) = DriverVersion::get()?.into();
