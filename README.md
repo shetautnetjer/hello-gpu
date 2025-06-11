@@ -38,7 +38,7 @@ cd hello-gpu
 # compile for specific arch e.g. Ada Lovelace
 $Env:CUDA_ARCH = "sm_89"
 
-cargo run --release
+Run `./hey-gpu` to check GPU status.
 Sample output:
 
 json
