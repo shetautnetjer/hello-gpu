@@ -1,0 +1,8 @@
+#!/usr/bin/env bash
+set -e
+
+if [ -x "./target/release/hello_gpu" ]; then
+    exec ./target/release/hello_gpu "$@"
+else
+    exec cargo run --release -- "$@"
+fi
