@@ -82,3 +82,6 @@ The agent may generate the following schema (stored at `target/gpu_env_report.js
     "Use cust's get_function() to validate PTX symbol presence at runtime"
   ]
 }
+
+## Verifying CUDA Setup
+Run `./scripts/check_env.sh` to confirm that `nvidia-smi`, `nvcc`, and the demo kernel all function correctly. The script prints your driver and CUDA toolkit versions so you can verify they match.
