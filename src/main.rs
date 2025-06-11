@@ -1,7 +1,8 @@
-use std::{ffi::CStr, fs, os::raw::c_void};
+//! Demo binary: launches the vec_add CUDA kernel, validates the result
+//! and prints a JSON health-report about the GPU + driver stack.
 
 use cust::{
-    error::{CudaError, CudaResult},
+    error::CudaResult,
     memory::DeviceBuffer,
     prelude::*,
     version::DriverVersion,
@@ -9,54 +10,61 @@ use cust::{
 use nvml_wrapper::Nvml;
 use serde::Serialize;
 
+// ───────────────────────── constants ────────────────────────────────────
+// The PTX is compiled by build.rs and its absolute path is exported as an
+// env-var at *compile* time, so we can embed the file here.
+const VEC_ADD_PTX: &str = include_str!(env!("KERNEL_VEC_ADD_PTX"));
+
+// ───────────────────────── structs ──────────────────────────────────────
 #[derive(Serialize)]
-struct GpuReport<'a> {
-    name: &'a str,
-    pcie_bus_id: String,
-    sm_major_minor: (i32, i32),
-    total_mem_mb: u64,
-    driver_version: String,
-    runtime_version: (u32, u32),
-    ptx_version: (i32, i32),
-    kernel_ok: bool,
+struct GpuReport {
+    name:             String,
+    pcie_bus_id:      String,
+    sm_major_minor:   (i32, i32),
+    total_mem_mb:     u64,
+    driver_version:   String,
+    runtime_version:  (u32, u32),
+    ptx_version:      (i32, i32),
+    kernel_ok:        bool,
+    elapsed_us:       u128,
 }
 
+// ───────────────────────── entry point ──────────────────────────────────
 fn main() -> CudaResult<()> {
-    // ── driver + context ────────────────────────────────────────────────
+    // ── initialise CUDA ────────────────────────────────────────────────
     cust::init(cust::CudaFlags::empty())?;
     let device = Device::get_device(0)?;
-    let _ctx = Context::create_and_push(
+    let _ctx   = Context::create_and_push(
         ContextFlags::MAP_HOST | ContextFlags::SCHED_AUTO,
         device,
     )?;
 
-    // ── gather static props ─────────────────────────────────────────────
-    let nvml   = Nvml::init().unwrap();
-    let handle = nvml.device_by_index(0).unwrap();
+    // ── grab driver/runtime metadata ───────────────────────────────────
+    let (rt_major, rt_minor)      = cust::version()?;
+    let (_ptx_major, _ptx_minor)  = Module::ptx_target_version();
+    let (drv_major, drv_minor)    = DriverVersion::get()?.into();
 
-    let (drv_major, drv_minor) = DriverVersion::get()?.into();
-    let (rt_major, rt_minor)   = cust::version()?;
-    let (_ptx_major, _ptx_minor) = Module::ptx_target_version();
+    let nvml    = Nvml::init().unwrap();
+    let handle  = nvml.device_by_index(0).unwrap();
 
-    // ── PTX module ──────────────────────────────────────────────────────
-    let ptx_path = std::env::var("KERNEL_PTX")
-        .map_err(|e| CudaError::Other { code: 1, msg: e.to_string() })?;
-    let ptx_src = fs::read_to_string(&ptx_path)
-        .map_err(|e| CudaError::Other { code: 2, msg: e.to_string() })?;
-    let module  = Module::from_ptx(ptx_src.as_str(), &[])?;
-    let func    = module.get_function("vec_add")?;
+    // ── load PTX & kernel ──────────────────────────────────────────────
+    let module = Module::from_ptx(VEC_ADD_PTX, &[])?;
+    let func   = module.get_function("vec_add")?;
 
-    // ── allocate & launch ───────────────────────────────────────────────
-    let n = 1 << 20;
-    let (h_a, h_b): (Vec<f32>, Vec<f32>) = (vec![1.0; n], vec![2.0; n]);
-    let mut h_c = vec![0f32; n];
+    // ── allocate host/device buffers ───────────────────────────────────
+    let n      = 1 << 20;
+    let h_a    = vec![1.0f32; n];
+    let h_b    = vec![2.0f32; n];
+    let mut h_c = vec![0.0f32; n];
 
-    let d_a = DeviceBuffer::from_slice(&h_a)?;
-    let d_b = DeviceBuffer::from_slice(&h_b)?;
+    let d_a    = DeviceBuffer::from_slice(&h_a)?;
+    let d_b    = DeviceBuffer::from_slice(&h_b)?;
     let mut d_c = DeviceBuffer::<f32>::uninitialized(n)?;
 
     let stream = Stream::new(StreamFlags::DEFAULT, None)?;
 
+    // ── launch kernel ──────────────────────────────────────────────────
+    let tic = std::time::Instant::now();
     unsafe {
         launch!(
             func<<<(n as u32 + 255) / 256, 256, 0, stream>>>(
@@ -68,20 +76,23 @@ fn main() -> CudaResult<()> {
         )?;
     }
     stream.synchronize()?;
-    d_c.copy_to(&mut h_c)?;
+    let elapsed = tic.elapsed().as_micros();
 
-    // ── validate & print ────────────────────────────────────────────────
+    // ── copy back & validate ───────────────────────────────────────────
+    d_c.copy_to(&mut h_c)?;
     let ok = h_c.iter().all(|&v| (v - 3.0).abs() < 1e-6);
 
+    // ── build JSON report ──────────────────────────────────────────────
     let report = GpuReport {
-        name: device.name()?,
-        pcie_bus_id: handle.pci_info().unwrap().bus_id().to_string(),
-        sm_major_minor: (device.major_version()?, device.minor_version()?),
-        total_mem_mb: handle.memory_info().unwrap().total / 1024 / 1024,
-        driver_version: format!("{drv_major}.{drv_minor}"),
+        name:            device.name()?.to_owned(),
+        pcie_bus_id:     handle.pci_info().unwrap().bus_id().to_string(),
+        sm_major_minor:  (device.major_version()?, device.minor_version()?),
+        total_mem_mb:    handle.memory_info().unwrap().total / 1_048_576,
+        driver_version:  format!("{drv_major}.{drv_minor}"),
         runtime_version: (rt_major, rt_minor),
-        ptx_version: (_ptx_major, _ptx_minor),
-        kernel_ok: ok,
+        ptx_version:     (_ptx_major, _ptx_minor),
+        kernel_ok:       ok,
+        elapsed_us:      elapsed,
     };
 
     println!("{}", serde_json::to_string_pretty(&report).unwrap());
