@@ -84,4 +84,8 @@ The agent may generate the following schema (stored at `target/gpu_env_report.js
 }
 
 ## Verifying CUDA Setup
+When no GPU is available you can still produce the diagnostic JSON by running
+`cargo run --bin gen_gpu_report`. This builds `scripts/gen_gpu_report.rs` and
+writes a simulated report to `target/gpu_env_report.json`. The same file is
+generated if you compile with `rustc scripts/gen_gpu_report.rs && ./gen_gpu_report`.
 Run `./scripts/check_env.sh` to confirm that `nvidia-smi`, `nvcc`, and the demo kernel all function correctly. The script prints your driver and CUDA toolkit versions so you can verify they match.
