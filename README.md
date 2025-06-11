@@ -54,6 +54,20 @@ Copy
   "kernel_ok": true
 }
 
+### Library API
+Add this crate as a dependency in `Cargo.toml` and call `hello_gpu::generate_report()`
+to obtain a `GpuReport` struct with the same fields shown above.
+
+```rust
+use hello_gpu::generate_report;
+
+fn main() -> Result<(), Box<dyn std::error::Error>> {
+    let info = generate_report()?;
+    println!("{}", serde_json::to_string_pretty(&info)?);
+    Ok(())
+}
+```
+
 🖥️ Checking your NVIDIA setup
 Run `scripts/check_env.sh` to verify that your GPU, driver and CUDA toolkit are installed correctly.
 
