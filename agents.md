@@ -82,3 +82,14 @@ The agent may generate the following schema (stored at `target/gpu_env_report.js
     "Use cust's get_function() to validate PTX symbol presence at runtime"
   ]
 }
+
+## 📜 Generating a Simulated Report
+
+Run the helper script `scripts/gen_gpu_report.rs` to create `target/gpu_env_report.json` with simulated results when no GPU is present.
+
+```bash
+cargo run --bin gen_gpu_report
+# or
+rustc scripts/gen_gpu_report.rs && ./gen_gpu_report
+```
+
