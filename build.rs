@@ -18,7 +18,7 @@ fn main() {
         .expect("failed to spawn nvcc");
 
     if !status.success() {
-        panic!("nvcc failed with exit code {status}");
+        panic!("nvcc failed with exit code {}", status);
     }
     println!("cargo:rustc-env=KERNEL_PTX={out_dir}/vec_add.ptx");
 }
