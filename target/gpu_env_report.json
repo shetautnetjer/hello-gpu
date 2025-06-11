@@ -1,0 +1,32 @@
+{
+  "agent_version": "v1.0",
+  "can_compile_cuda": false,
+  "can_run_gpu_kernels": false,
+  "missing_tools": ["nvcc", "nvidia-smi", "clang", "ptxas", "ld"],
+  "cuda_arch_expected": "compute_89",
+  "kernel": {
+    "name": "vec_add",
+    "source": "kernels/vec_add.cu",
+    "ptx_target": "target/vec_add.ptx",
+    "symbol": "vec_add",
+    "arg_signature": ["*mut f32", "*const f32", "usize"]
+  },
+  "build_rs_flags": {
+    "arch": "compute_89",
+    "output_dir": "OUT_DIR",
+    "ptx_path_env": "KERNEL_PTX"
+  },
+  "fallback_mode": "simulate",
+  "simulated_report": {
+    "device": "Simulated NVIDIA RTX 4090",
+    "sm": [8, 9],
+    "driver_version": "535.104",
+    "ptx_version": [8, 0],
+    "kernel_ok": true
+  },
+  "recommendations": [
+    "Skip nvcc in containers where /usr/local/cuda is missing",
+    "Precompile PTX in host dev machine and ship it with container",
+    "Use cust's get_function() to validate PTX symbol presence at runtime"
+  ]
+}
