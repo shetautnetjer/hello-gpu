@@ -12,9 +12,11 @@ use cust::{
     stream::{Stream, StreamFlags},
     CudaApiVersion,                  // runtime + PTX version helpers
     CudaFlags,
+    function::FunctionAttribute,
 };
 use nvml_wrapper::Nvml;
 use serde::Serialize;
+use std::time::Instant;
 
 const VEC_ADD_PTX: &str = include_str!(env!("KERNEL_VEC_ADD_PTX"));
 
@@ -27,7 +29,11 @@ pub fn vec_add_gpu(a: &[f32], b: &[f32]) -> Vec<f32> {
     assert_eq!(a.len(), b.len());
     match try_vec_add_cuda(a, b) {
         Ok(out) => out,
-        Err(_) => a.iter().zip(b).map(|(&x, &y)| x + y).collect(),
+        Err(e) => {
+            eprintln!("⚠️ GPU vector add failed: {}", e);
+            eprintln!("💡 Falling back to CPU implementation");
+            a.iter().zip(b).map(|(&x, &y)| x + y).collect()
+        }
     }
 }
 
@@ -40,70 +46,104 @@ pub struct GpuReport {
     pub total_mem_mb: u64,
     pub driver_version: String,
     pub runtime_version: (u32, u32),
-    pub ptx_version: (i32, i32),
+    pub ptx_version: u32, // PTX version of the loaded kernel
     pub kernel_ok: bool,
     pub elapsed_us: u128,
+    pub error_message: Option<String>,
 }
 
 /// Collect device + driver info, launch a 1 M-element vec_add smoke-test.
 pub fn generate_report() -> Result<GpuReport, Box<dyn std::error::Error>> {
-    cust::init(CudaFlags::empty())?;
+    let start = Instant::now();
+    let mut error_message = None;
 
-    /*── device + context ───────────────────────────────────────────────*/
-    let device = Device::get_device(0)?;
-    let _ctx = Context::new(device)?; // context is already current
+    let result = (|| -> Result<GpuReport, Box<dyn std::error::Error>> {
+        cust::init(CudaFlags::empty())?;
 
-    /*── NVML host info ────────────────────────────────────────────────*/
-    let nvml  = Nvml::init()?;
-    let handle = nvml.device_by_index(0)?;
-    let pci    = handle.pci_info()?;
+        /*── device + context ───────────────────────────────────────────────*/
+        let device = Device::get_device(0)?;
+        let _ctx = Context::new(device)?; // context is already current
 
-    /*── load PTX & kernel symbol ──────────────────────────────────────*/
-    let module = Module::from_ptx(VEC_ADD_PTX, &[])?;
-    let func   = module.get_function("vec_add")?;
+        /*── NVML host info ────────────────────────────────────────────────*/
+        let nvml = Nvml::init()?;
+        let handle = nvml.device_by_index(0)?;
+        let pci = handle.pci_info()?;
 
-    /*── allocate + launch ─────────────────────────────────────────────*/
-    let n  = 1 << 20;
-    let h_a = vec![1.0f32; n];
-    let h_b = vec![2.0f32; n];
-    let mut h_c = vec![0.0f32; n];
+        /*── load PTX & kernel symbol ──────────────────────────────────────*/
+        let module = Module::from_ptx(VEC_ADD_PTX, &[])?;
+        let func = module.get_function("vec_add")?;
 
-    let d_a = DeviceBuffer::from_slice(&h_a)?;
-    let d_b = DeviceBuffer::from_slice(&h_b)?;
-    let mut d_c = unsafe { DeviceBuffer::<f32>::uninitialized(n)? };
+        /*── allocate + launch ─────────────────────────────────────────────*/
+        let n = 1 << 20;
+        let h_a = vec![1.0f32; n];
+        let h_b = vec![2.0f32; n];
+        let mut h_c = vec![0.0f32; n];
 
-    let stream = Stream::new(StreamFlags::DEFAULT, None)?;
-    let tic    = std::time::Instant::now();
+        let d_a = DeviceBuffer::from_slice(&h_a)?;
+        let d_b = DeviceBuffer::from_slice(&h_b)?;
+        let mut d_c = unsafe { DeviceBuffer::<f32>::uninitialized(n)? };
 
-    unsafe {
-        launch!(
-            func<<<(n as u32 + 255) / 256, 256, 0, stream>>>(
-                d_a.as_device_ptr(),
-                d_b.as_device_ptr(),
-                d_c.as_device_ptr(),
-                n as i32
-            )
-        )?;
+        let stream = Stream::new(StreamFlags::DEFAULT, None)?;
+        let tic = Instant::now();
+
+        unsafe {
+            launch!(
+                func<<<(n as u32 + 255) / 256, 256, 0, stream>>>(
+                    d_a.as_device_ptr(),
+                    d_b.as_device_ptr(),
+                    d_c.as_device_ptr(),
+                    n as i32
+                )
+            )?;
+        }
+        stream.synchronize()?;
+        let elapsed = tic.elapsed().as_micros();
+
+        d_c.copy_to(&mut h_c)?;
+        let ok = h_c.iter().all(|&v| (v - 3.0).abs() < 1e-6);
+        let api = CudaApiVersion::get()?;
+
+        let major = device.get_attribute(cust::device::DeviceAttribute::ComputeCapabilityMajor)? as i32;
+        let minor = device.get_attribute(cust::device::DeviceAttribute::ComputeCapabilityMinor)? as i32;
+        let sm_major_minor = (major, minor);
+        let ptx_version = func.get_attribute(cust::function::FunctionAttribute::PtxVersion)? as u32;
+
+        /*── build JSON report ─────────────────────────────────────────────*/
+        Ok(GpuReport {
+            name: device.name()?.to_owned(),
+            pcie_bus_id: pci.bus_id.to_string(),
+            sm_major_minor,
+            total_mem_mb: handle.memory_info()?.total / 1_048_576,
+            driver_version: nvml.sys_driver_version()?.to_owned(),
+            runtime_version: (api.major() as u32, api.minor() as u32),
+            ptx_version,
+            kernel_ok: ok,
+            elapsed_us: elapsed,
+            error_message: None,
+        })
+    })();
+
+    match result {
+        Ok(mut report) => {
+            report.elapsed_us = start.elapsed().as_micros();
+            Ok(report)
+        }
+        Err(e) => {
+            error_message = Some(e.to_string());
+            Ok(GpuReport {
+                name: "Error".to_string(),
+                pcie_bus_id: "N/A".to_string(),
+                sm_major_minor: (0, 0),
+                total_mem_mb: 0,
+                driver_version: "N/A".to_string(),
+                runtime_version: (0, 0),
+                ptx_version: 0,
+                kernel_ok: false,
+                elapsed_us: start.elapsed().as_micros(),
+                error_message,
+            })
+        }
     }
-    stream.synchronize()?;
-    let elapsed = tic.elapsed().as_micros();
-
-    d_c.copy_to(&mut h_c)?;
-    let ok = h_c.iter().all(|&v| (v - 3.0).abs() < 1e-6);
-    let api = CudaApiVersion::get()?;
-
-    /*── build JSON report ─────────────────────────────────────────────*/
-    Ok(GpuReport {
-        name: device.name()?.to_owned(),
-        pcie_bus_id: pci.bus_id.to_string(),
-        sm_major_minor: device.compute_capability()?,
-        total_mem_mb: handle.memory_info()?.total / 1_048_576,
-        driver_version: nvml.sys_driver_version()?.to_owned(),
-        runtime_version: (api.runtime.major, api.runtime.minor),
-        ptx_version: (api.ptx.major, api.ptx.minor),
-        kernel_ok: ok,
-        elapsed_us: elapsed,
-    })
 }
 
 /*───────────────────────────────────────────────────────────────────────────*/
@@ -113,7 +153,7 @@ pub fn generate_report() -> Result<GpuReport, Box<dyn std::error::Error>> {
 fn try_vec_add_cuda(a: &[f32], b: &[f32]) -> CudaResult<Vec<f32>> {
     let _ctx = cust::quick_init()?;                 // simple context helper
     let module = Module::from_ptx(VEC_ADD_PTX, &[])?;
-    let func   = module.get_function("vec_add")?;
+    let func = module.get_function("vec_add")?;
 
     let d_a = DeviceBuffer::from_slice(a)?;
     let d_b = DeviceBuffer::from_slice(b)?;

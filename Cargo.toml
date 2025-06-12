@@ -1,8 +1,8 @@
 [package]
-name = "hello_gpu"
-version = "0.2.0"
+name = "hello-gpu"
+version = "0.1.0"
 edition = "2021"
-default-run = "hello_gpu"
+default-run = "hello-gpu"
 build = "build.rs"
 
 [dependencies]

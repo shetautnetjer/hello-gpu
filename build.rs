@@ -7,19 +7,19 @@ use std::{
 
 fn main() {
     if env::var_os("SKIP_CUDA").is_some() {
-        println!("cargo:warning=SKIP_CUDA=1 – skipping CUDA kernels");
+        println!("cargo:warning=SKIP_CUDA=1 - skipping CUDA kernels");
         return;
     }
 
     if Command::new("nvcc").arg("--version").output().is_err() {
-        println!("cargo:warning=nvcc not found – skipping CUDA");
+        println!("cargo:warning=nvcc not found - skipping CUDA");
         return;
     }
 
     let (cl_path, sdk_version) = match find_windows_toolchain() {
         Ok(t) => t,
         Err(e) => {
-            println!("cargo:warning={e}");
+            println!("cargo:warning={}", e);
             return;
         }
     };
@@ -54,44 +54,53 @@ fn main() {
             "KERNEL_{}_PTX",
             cu.file_stem().unwrap().to_string_lossy().to_uppercase()
         );
-        println!("cargo:rustc-env={var}={}", ptx.display());
+        println!("cargo:rustc-env={}={}", var, ptx.display());
         println!("cargo:rerun-if-changed={}", cu.display());
     }
 }
 
 fn find_windows_toolchain() -> Result<(PathBuf, String), String> {
-    let vswhere = r"C:\Program Files (x86)\Microsoft Visual Studio\Installer\vswhere.exe";
-    let vs_root = String::from_utf8(
-        Command::new(vswhere)
-            .args(["-latest", "-products", "*", "-property", "installationPath"])
-            .output()
-            .map_err(|_| "vswhere.exe not found. Install VS Build Tools.")?
-            .stdout,
-    )
-    .unwrap();
-    if vs_root.trim().is_empty() {
-        return Err("MSVC not installed".into());
+    let vswhere = PathBuf::from(env::var("ProgramFiles(x86)").unwrap())
+        .join("Microsoft Visual Studio")
+        .join("Installer")
+        .join("vswhere.exe");
+
+    let output = Command::new(vswhere)
+        .args([
+            "-products", "*",
+            "-requires", "Microsoft.VisualStudio.Component.VC.Tools.x86.x64",
+            "-property", "installationPath",
+            "-nologo",
+        ])
+        .output()
+        .map_err(|e| format!("vswhere failed: {}", e))?;
+
+    if !output.status.success() {
+        return Err("vswhere failed".to_string());
     }
 
-    let cl = Path::new(vs_root.trim())
-        .join(r"VC\Tools\MSVC")
+    let vs_path = String::from_utf8_lossy(&output.stdout).trim().to_string();
+    let cl_path = PathBuf::from(&vs_path)
+        .join("VC")
+        .join("Tools")
+        .join("MSVC")
         .read_dir()
-        .map_err(|_| "No MSVC toolsets found")?
-        .filter_map(Result::ok)
-        .map(|p| p.path())
-        .filter(|p| p.join("bin\\Hostx64\\x64\\cl.exe").exists())
-        .max()
-        .ok_or("Could not find Hostx64\\x64\\cl.exe")?
-        .join(r"bin\Hostx64\x64\cl.exe");
+        .map_err(|e| format!("failed to read MSVC dir: {}", e))?
+        .filter_map(|entry| entry.ok())
+        .max_by_key(|entry| entry.file_name())
+        .ok_or_else(|| "no MSVC version found".to_string())?
+        .path()
+        .join("bin")
+        .join("Hostx64")
+        .join("x64")
+        .join("cl.exe");
 
-    let kits = Path::new(r"C:\Program Files (x86)\Windows Kits\10\Include");
-    let sdk = kits.read_dir()
-        .map_err(|_| "No Windows SDKs found")?
-        .filter_map(Result::ok)
-        .filter_map(|e| e.file_name().into_string().ok())
-        .filter(|v| v.starts_with("10.0.") && v.as_str() <= "10.0.22621")
-        .max()
-        .ok_or("No Windows SDK ≤ 10.0.22621 found")?;
+    if !cl_path.exists() {
+        return Err("cl.exe not found".to_string());
+    }
 
-    Ok((cl, format!("{sdk}.0")))
+    let sdk_version = env::var("WindowsSDKVersion")
+        .unwrap_or_else(|_| "10.0.26100.0".to_string());
+
+    Ok((cl_path, sdk_version))
 }
