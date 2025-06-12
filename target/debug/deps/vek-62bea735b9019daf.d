@@ -1,0 +1,13 @@
+C:\Users\khama\hello-gpu\target\debug\deps\libvek-62bea735b9019daf.rmeta: C:\Users\khama\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\vek-0.17.1\src\lib.rs C:\Users\khama\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\vek-0.17.1\src\ops.rs C:\Users\khama\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\vek-0.17.1\src\vec.rs C:\Users\khama\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\vek-0.17.1\src\mat.rs C:\Users\khama\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\vek-0.17.1\src\quaternion.rs C:\Users\khama\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\vek-0.17.1\src\transition.rs C:\Users\khama\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\vek-0.17.1\src\transform.rs C:\Users\khama\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\vek-0.17.1\src\bezier.rs C:\Users\khama\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\vek-0.17.1\src\geom.rs
+
+C:\Users\khama\hello-gpu\target\debug\deps\vek-62bea735b9019daf.d: C:\Users\khama\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\vek-0.17.1\src\lib.rs C:\Users\khama\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\vek-0.17.1\src\ops.rs C:\Users\khama\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\vek-0.17.1\src\vec.rs C:\Users\khama\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\vek-0.17.1\src\mat.rs C:\Users\khama\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\vek-0.17.1\src\quaternion.rs C:\Users\khama\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\vek-0.17.1\src\transition.rs C:\Users\khama\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\vek-0.17.1\src\transform.rs C:\Users\khama\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\vek-0.17.1\src\bezier.rs C:\Users\khama\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\vek-0.17.1\src\geom.rs
+
+C:\Users\khama\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\vek-0.17.1\src\lib.rs:
+C:\Users\khama\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\vek-0.17.1\src\ops.rs:
+C:\Users\khama\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\vek-0.17.1\src\vec.rs:
+C:\Users\khama\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\vek-0.17.1\src\mat.rs:
+C:\Users\khama\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\vek-0.17.1\src\quaternion.rs:
+C:\Users\khama\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\vek-0.17.1\src\transition.rs:
+C:\Users\khama\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\vek-0.17.1\src\transform.rs:
+C:\Users\khama\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\vek-0.17.1\src\bezier.rs:
+C:\Users\khama\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\vek-0.17.1\src\geom.rs:

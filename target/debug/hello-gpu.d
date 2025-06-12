@@ -1,0 +1,1 @@
+C:\Users\khama\hello-gpu\target\debug\hello-gpu.exe: C:\Users\khama\hello-gpu\build.rs C:\Users\khama\hello-gpu\kernels\vec_add.cu C:\Users\khama\hello-gpu\src\lib.rs C:\Users\khama\hello-gpu\src\main.rs C:\Users\khama\hello-gpu\target\debug\build\hello-gpu-ef62e40fed6ae89a\out\vec_add.ptx
