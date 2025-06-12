@@ -5,14 +5,12 @@
 use cust::{
     context::Context,
     device::Device,
-    error::CudaResult,
     memory::{CopyDestination, DeviceBuffer},
     module::Module,
     prelude::launch,                 // proc-macro for <<<grid,block>>>
     stream::{Stream, StreamFlags},
     CudaApiVersion,                  // runtime + PTX version helpers
     CudaFlags,
-    function::FunctionAttribute,
 };
 use nvml_wrapper::Nvml;
 use serde::Serialize;
@@ -25,16 +23,40 @@ const VEC_ADD_PTX: &str = include_str!(env!("KERNEL_VEC_ADD_PTX"));
 /*───────────────────────────────────────────────────────────────────────────*/
 
 /// Add two slices on GPU when possible, else CPU fallback.
-pub fn vec_add_gpu(a: &[f32], b: &[f32]) -> Vec<f32> {
-    assert_eq!(a.len(), b.len());
-    match try_vec_add_cuda(a, b) {
-        Ok(out) => out,
-        Err(e) => {
-            eprintln!("⚠️ GPU vector add failed: {}", e);
-            eprintln!("💡 Falling back to CPU implementation");
-            a.iter().zip(b).map(|(&x, &y)| x + y).collect()
-        }
+pub fn vec_add_gpu(a: &[f32], b: &[f32]) -> Result<Vec<f32>, Box<dyn std::error::Error>> {
+    if a.len() != b.len() {
+        return Err("Input vectors must have the same length".into());
     }
+
+    let n = a.len();
+
+    // Initialize CUDA
+    let _ctx = cust::quick_init()?;
+
+    // Allocate device memory
+    let d_a = DeviceBuffer::from_slice(a)?;
+    let d_b = DeviceBuffer::from_slice(b)?;
+    let d_c = unsafe { DeviceBuffer::<f32>::uninitialized(n)? };
+
+    // Load and launch kernel
+    let module = Module::from_ptx(VEC_ADD_PTX, &[])?;
+    let func = module.get_function("vec_add")?;
+    let stream = Stream::new(StreamFlags::DEFAULT, None)?;
+
+    unsafe {
+        launch!(
+            func<<<(n as u32 + 255) / 256, 256, 0, stream>>>(
+                d_a.as_device_ptr(),
+                d_b.as_device_ptr(),
+                d_c.as_device_ptr(),
+                n as i32
+            )
+        )?;
+    }
+    stream.synchronize()?;
+
+    // Copy result back to host
+    Ok(d_c.as_host_vec()?)
 }
 
 /// Runtime diagnostics (print with `serde_json::to_string_pretty`).
@@ -55,7 +77,6 @@ pub struct GpuReport {
 /// Collect device + driver info, launch a 1 M-element vec_add smoke-test.
 pub fn generate_report() -> Result<GpuReport, Box<dyn std::error::Error>> {
     let start = Instant::now();
-    let mut error_message = None;
 
     let result = (|| -> Result<GpuReport, Box<dyn std::error::Error>> {
         cust::init(CudaFlags::empty())?;
@@ -81,7 +102,7 @@ pub fn generate_report() -> Result<GpuReport, Box<dyn std::error::Error>> {
 
         let d_a = DeviceBuffer::from_slice(&h_a)?;
         let d_b = DeviceBuffer::from_slice(&h_b)?;
-        let mut d_c = unsafe { DeviceBuffer::<f32>::uninitialized(n)? };
+        let d_c = unsafe { DeviceBuffer::<f32>::uninitialized(n)? };
 
         let stream = Stream::new(StreamFlags::DEFAULT, None)?;
         let tic = Instant::now();
@@ -129,7 +150,6 @@ pub fn generate_report() -> Result<GpuReport, Box<dyn std::error::Error>> {
             Ok(report)
         }
         Err(e) => {
-            error_message = Some(e.to_string());
             Ok(GpuReport {
                 name: "Error".to_string(),
                 pcie_bus_id: "N/A".to_string(),
@@ -140,42 +160,8 @@ pub fn generate_report() -> Result<GpuReport, Box<dyn std::error::Error>> {
                 ptx_version: 0,
                 kernel_ok: false,
                 elapsed_us: start.elapsed().as_micros(),
-                error_message,
+                error_message: Some(e.to_string()),
             })
         }
     }
-}
-
-/*───────────────────────────────────────────────────────────────────────────*/
-/* Internal CUDA helper                                                     */
-/*───────────────────────────────────────────────────────────────────────────*/
-
-fn try_vec_add_cuda(a: &[f32], b: &[f32]) -> CudaResult<Vec<f32>> {
-    let _ctx = cust::quick_init()?;                 // simple context helper
-    let module = Module::from_ptx(VEC_ADD_PTX, &[])?;
-    let func = module.get_function("vec_add")?;
-
-    let d_a = DeviceBuffer::from_slice(a)?;
-    let d_b = DeviceBuffer::from_slice(b)?;
-    let mut d_c = unsafe { DeviceBuffer::<f32>::uninitialized(a.len())? };
-
-    let stream = Stream::new(StreamFlags::DEFAULT, None)?;
-    unsafe {
-        launch!(
-            func<<<(a.len() as u32 + 255) / 256, 256, 0, stream>>>(
-                d_a.as_device_ptr(),
-                d_b.as_device_ptr(),
-                d_c.as_device_ptr(),
-                a.len() as i32
-            )
-        )?;
-    }
-    stream.synchronize()?;
-
-    let out = {
-        let mut tmp = vec![0.0f32; a.len()];
-        d_c.copy_to(&mut tmp)?;
-        tmp
-    };
-    Ok(out)
 }
