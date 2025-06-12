@@ -1,29 +1,12 @@
 [package]
-name         = "hello_gpu"
-version      = "0.1.0"
-edition      = "2021"
-description  = "Plug-and-play CUDA acceleration for any Rust trading-bot component"
-license      = "MIT OR Apache-2.0"
-default-run  = "hello_gpu"
-build        = "build.rs"
+name = "hello_gpu"
+version = "0.2.0"
+edition = "2021"
+default-run = "hello_gpu"
+build = "build.rs"
 
 [dependencies]
-cust          = { git = "https://github.com/Rust-GPU/Rust-CUDA", branch = "main" }
-nvml-wrapper  = "0.11"
-serde         = { version = "1.0", features = ["derive"] }
-serde_json    = "1.0"
-
-[dev-dependencies]
-# nothing yet
-
-[lib]
-name = "hello_gpu"
-path = "src/lib.rs"
-
-[[bin]]
-name = "hello_gpu"
-path = "src/main.rs"
-
-[[bin]]
-name = "gen_gpu_report"
-path = "scripts/gen_gpu_report.rs"
+cust = { git = "https://github.com/Rust-GPU/Rust-CUDA", branch = "main" }
+nvml-wrapper = "0.11"
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"

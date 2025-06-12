@@ -1,0 +1,3 @@
+vec_add.cu
+cargo:rustc-env=KERNEL_VEC_ADD_PTX=C:\Users\khama\hello-gpu\target\debug\build\hello_gpu-c558614edd87f8f4\out\vec_add.ptx
+cargo:rerun-if-changed=kernels\vec_add.cu
