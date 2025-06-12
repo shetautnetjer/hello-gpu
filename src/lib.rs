@@ -51,8 +51,7 @@ pub fn generate_report() -> Result<GpuReport, Box<dyn std::error::Error>> {
 
     /*── device + context ───────────────────────────────────────────────*/
     let device = Device::get_device(0)?;
-    let ctx = Context::new(device)?;
-    ctx.set_current()?; // push as current
+    let _ctx = Context::new(device)?; // context is already current
 
     /*── NVML host info ────────────────────────────────────────────────*/
     let nvml  = Nvml::init()?;
@@ -91,19 +90,17 @@ pub fn generate_report() -> Result<GpuReport, Box<dyn std::error::Error>> {
 
     d_c.copy_to(&mut h_c)?;
     let ok = h_c.iter().all(|&v| (v - 3.0).abs() < 1e-6);
+    let api = CudaApiVersion::get()?;
 
     /*── build JSON report ─────────────────────────────────────────────*/
     Ok(GpuReport {
         name: device.name()?.to_owned(),
         pcie_bus_id: pci.bus_id.to_string(),
-        sm_major_minor: (
-            device.compute_capability_major()?,
-            device.compute_capability_minor()?,
-        ),
+        sm_major_minor: device.compute_capability()?,
         total_mem_mb: handle.memory_info()?.total / 1_048_576,
         driver_version: nvml.sys_driver_version()?.to_owned(),
-        runtime_version: CudaApiVersion::runtime_version()?,
-        ptx_version:    CudaApiVersion::ptx_version(),
+        runtime_version: (api.runtime.major, api.runtime.minor),
+        ptx_version: (api.ptx.major, api.ptx.minor),
         kernel_ok: ok,
         elapsed_us: elapsed,
     })
@@ -135,7 +132,10 @@ fn try_vec_add_cuda(a: &[f32], b: &[f32]) -> CudaResult<Vec<f32>> {
     }
     stream.synchronize()?;
 
-    let mut out = vec![0.0f32; a.len()];
-    d_c.copy_to(&mut out)?;
+    let out = {
+        let mut tmp = vec![0.0f32; a.len()];
+        d_c.copy_to(&mut tmp)?;
+        tmp
+    };
     Ok(out)
 }
